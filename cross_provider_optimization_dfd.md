@@ -1,12 +1,13 @@
-# Cross-Provider Customer Optimization Data Flow Diagram (DFD) with Lambda Functions
+# Cross-Provider M2M Customer Optimization Data Flow Diagram (DFD) with Lambda Functions
 
-## Visual DFD - Cross-Provider Customer Optimization Process
+## Visual DFD - Cross-Provider M2M Customer Optimization Process
+**Note:** This optimization process is specifically designed for M2M (Machine-to-Machine) portal type only.
 
 ```mermaid
 flowchart TD
-    A["🔴 AMOP 2.0 Trigger<br/>Cross-Provider Customer Request"] --> |Customer Parameters<br/>Multi-Provider Settings| B
+    A["🔴 AMOP 2.0 Trigger<br/>Cross-Provider M2M Customer Request"] --> |M2M Customer Parameters<br/>Multi-Provider Settings| B
     
-    B["🔷 Cross-Provider Session Management<br/>Multi-Provider Customer Validation"] --> |Validated Customer Data<br/>Provider Associations| C
+    B["🔷 Cross-Provider M2M Session Management<br/>Multi-Provider M2M Customer Validation"] --> |Validated M2M Customer Data<br/>Provider Associations| C
     
     C["🟢 Cross-Provider Rate Plan Discovery<br/>Multi-Provider Auto Change Detection"] --> |Cross-Provider Rate Plan Status<br/>Provider-Specific Capabilities| D
     
