@@ -15,47 +15,31 @@ This document provides a comprehensive analysis of the key validation rules impl
 ### Algorithm
 ```
 ALGORITHM: ValidateCustomerIdentification
-INPUT: SQSMessage message, SiteTypes customerType
-OUTPUT: Boolean validationResult, CustomerData customerData
+INPUT: M = SQS Message, T = Customer Type
+OUTPUT: (Valid, CustomerData) where Valid ∈ {True, False}
 
-BEGIN
-    // Step 1: Check for presence of either customer identifier
-    IF NOT (message.MessageAttributes.ContainsKey("CustomerId") OR 
-            message.MessageAttributes.ContainsKey("AMOPCustomerId")) THEN
-        LOG("EXCEPTION", "No Customer Id provided in message")
-        RETURN FALSE, NULL
-    END IF
-    
-    // Step 2: Validate Rev Customer ID if customer type is Rev
-    IF customerType == SiteTypes.Rev THEN
-        IF message.MessageAttributes.ContainsKey("CustomerId") THEN
-            customerId = PARSE_GUID(message.MessageAttributes["CustomerId"].StringValue)
-            IF customerId == Guid.Empty OR customerId == NULL THEN
-                LOG("EXCEPTION", "Blank Customer Id provided in message")
-                RETURN FALSE, NULL
-            END IF
-        ELSE
-            LOG("EXCEPTION", "Rev customer type requires CustomerId")
-            RETURN FALSE, NULL
-        END IF
-    END IF
-    
-    // Step 3: Validate AMOP Customer ID if present
-    IF message.MessageAttributes.ContainsKey("AMOPCustomerId") THEN
-        amopCustomerId = PARSE_INT(message.MessageAttributes["AMOPCustomerId"].StringValue)
-        IF amopCustomerId <= 0 THEN
-            LOG("EXCEPTION", "Invalid AMOP Customer Id")
-            RETURN FALSE, NULL
-        END IF
-    END IF
-    
-    // Step 4: Ensure appropriate customer ID exists for processing
-    IF customerType != SiteTypes.Rev AND amopCustomerId == NULL THEN
-        THROW ArgumentNullException("AMOP Customer ID required for non-Rev customers")
-    END IF
-    
-    RETURN TRUE, {customerId, amopCustomerId}
-END
+Step 1: Presence Verification
+       Let A = {CustomerId ∈ M.attributes}
+       Let B = {AMOPCustomerId ∈ M.attributes}
+       If A ∪ B = ∅, then Return (False, ∅)
+
+Step 2: Rev Customer Validation  
+       If T = Rev, then:
+           If A ≠ ∅, then:
+               Parse CustomerId → GUID format
+               If GUID = Empty ∨ GUID = NULL, then Return (False, ∅)
+           Else Return (False, ∅)
+
+Step 3: AMOP Customer Validation
+       If B ≠ ∅, then:
+           Parse AMOPCustomerId → Integer format  
+           If Integer ≤ 0, then Return (False, ∅)
+
+Step 4: Type-Specific Requirements
+       If T ≠ Rev ∧ B = ∅, then Throw Exception
+       
+Step 5: Success Case
+       Return (True, {ParsedCustomerId, ParsedAMOPCustomerId})
 ```
 
 ### Code Locations
@@ -82,44 +66,32 @@ END
 
 ### Algorithm
 ```
-ALGORITHM: ValidateBillingPeriod
-INPUT: SQSMessage message
-OUTPUT: Boolean validationResult, BillingPeriodData billingData
+ALGORITHM: ValidateBillingPeriod  
+INPUT: M = SQS Message
+OUTPUT: (Valid, BillingData) where Valid ∈ {True, False}
 
-BEGIN
-    // Step 1: Check for billing period information presence
-    IF NOT (message.MessageAttributes.ContainsKey("BillPeriodId") OR 
-            (message.MessageAttributes.ContainsKey("BillYear") AND 
-             message.MessageAttributes.ContainsKey("BillMonth"))) THEN
-        LOG("EXCEPTION", "No Billing Period provided in message")
-        RETURN FALSE, NULL
-    END IF
-    
-    // Step 2: Validate BillPeriodId if present
-    IF message.MessageAttributes.ContainsKey("BillPeriodId") THEN
-        billingPeriodIdString = message.MessageAttributes["BillPeriodId"].StringValue
-        IF NOT TRY_PARSE_INT(billingPeriodIdString, OUT billingPeriodId) THEN
-            LOG("EXCEPTION", "Invalid Billing Period provided in message")
-            RETURN FALSE, NULL
-        END IF
-        
-        // Step 3: Validate billing period exists in database
-        billingPeriod = GET_BILLING_PERIOD(billingPeriodId)
-        IF billingPeriod == NULL THEN
-            LOG("ERROR", "Billing Period not found in database")
-            RETURN FALSE, NULL
-        END IF
-    END IF
-    
-    // Step 4: Retrieve associated service provider
-    serviceProviderId = GET_SERVICE_PROVIDER_FROM_BILLING_PERIOD(billingPeriodId)
-    IF serviceProviderId == NULL THEN
-        LOG("ERROR", "Service Provider not found for billing period")
-        RETURN FALSE, NULL
-    END IF
-    
-    RETURN TRUE, {billingPeriodId, billingPeriod, serviceProviderId}
-END
+Step 1: Attribute Set Definition
+       Let P = {BillPeriodId ∈ M.attributes}
+       Let Y = {BillYear ∈ M.attributes}  
+       Let M₀ = {BillMonth ∈ M.attributes}
+       If P ∪ (Y ∩ M₀) = ∅, then Return (False, ∅)
+
+Step 2: Period ID Validation
+       If P ≠ ∅, then:
+           Extract BillPeriodId value → String S
+           Parse S → Integer I
+           If Parse(S) fails, then Return (False, ∅)
+
+Step 3: Database Existence Verification  
+       Let DB = Database billing period records
+       If ∄ record ∈ DB where record.id = I, then Return (False, ∅)
+
+Step 4: Service Provider Association
+       Let SP = ServiceProvider(I)
+       If SP = ∅, then Return (False, ∅)
+
+Step 5: Success Case
+       Return (True, {I, BillingPeriod(I), SP})
 ```
 
 ### Code Locations
@@ -148,44 +120,30 @@ END
 ### Algorithm
 ```
 ALGORITHM: ValidateIntegrationAuthentication
-INPUT: SQSMessage message, SiteTypes customerType
-OUTPUT: Boolean validationResult, Integer integrationAuthId
+INPUT: M = SQS Message, T = Customer Type  
+OUTPUT: (Valid, AuthID) where Valid ∈ {True, False}, AuthID ∈ ℕ ∪ {∅}
 
-BEGIN
-    // Step 1: Check if integration auth is required
-    IF customerType == SiteTypes.Rev THEN
-        // Step 2: Validate presence of IntegrationAuthenticationId
-        IF NOT message.MessageAttributes.ContainsKey("IntegrationAuthenticationId") THEN
-            LOG("EXCEPTION", "Integration Authentication Id required for Rev customers")
-            RETURN FALSE, NULL
-        END IF
-        
-        // Step 3: Parse and validate authentication ID
-        authIdString = message.MessageAttributes["IntegrationAuthenticationId"].StringValue
-        IF NOT TRY_PARSE_INT(authIdString, OUT integrationAuthId) THEN
-            LOG("EXCEPTION", "Invalid Integration Authentication Id format")
-            RETURN FALSE, NULL
-        END IF
-        
-        // Step 4: Validate authentication ID is positive
-        IF integrationAuthId <= 0 THEN
-            LOG("EXCEPTION", "Integration Authentication Id must be positive")
-            RETURN FALSE, NULL
-        END IF
-        
-        // Step 5: Verify authentication credentials exist in system
-        IF NOT VERIFY_INTEGRATION_AUTH_EXISTS(integrationAuthId) THEN
-            LOG("EXCEPTION", "Integration Authentication credentials not found")
-            RETURN FALSE, NULL
-        END IF
-        
-    ELSE
-        // AMOP customers don't require integration authentication
-        integrationAuthId = NULL
-    END IF
-    
-    RETURN TRUE, integrationAuthId
-END
+Step 1: Type-Based Requirement Check
+       If T ≠ Rev, then Return (True, ∅)
+
+Step 2: Authentication Attribute Verification
+       Let A = {IntegrationAuthenticationId ∈ M.attributes}
+       If A = ∅, then Return (False, ∅)
+
+Step 3: Format Validation  
+       Extract IntegrationAuthenticationId value → String S
+       Parse S → Integer I
+       If Parse(S) fails, then Return (False, ∅)
+
+Step 4: Value Range Validation
+       If I ≤ 0, then Return (False, ∅)
+
+Step 5: System Existence Verification
+       Let AuthSystem = Set of valid authentication records
+       If I ∉ AuthSystem, then Return (False, ∅)
+
+Step 6: Success Case
+       Return (True, I)
 ```
 
 ### Code Locations
@@ -213,50 +171,30 @@ END
 ### Algorithm
 ```
 ALGORITHM: ValidateServiceProviderAssociation
-INPUT: SQSMessage message, Integer billingPeriodId
-OUTPUT: Boolean validationResult, ServiceProviderData providerData
+INPUT: M = SQS Message, B = Billing Period ID, C = Customer ID
+OUTPUT: (Valid, ProviderData) where Valid ∈ {True, False}
 
-BEGIN
-    // Step 1: Try to get Service Provider ID directly from message
-    serviceProviderId = GET_SERVICE_PROVIDER_ID_FROM_MESSAGE(message)
-    
-    // Step 2: If not in message, derive from billing period
-    IF serviceProviderId == NULL AND billingPeriodId != NULL THEN
-        serviceProviderId = GET_SERVICE_PROVIDER_FROM_BILLING_PERIOD(billingPeriodId)
-    END IF
-    
-    // Step 3: Validate service provider exists
-    IF serviceProviderId == NULL THEN
-        LOG("ERROR", "No service provider found for optimization")
-        RETURN FALSE, NULL
-    END IF
-    
-    // Step 4: For cross-provider optimization, validate service provider list
-    IF CROSS_PROVIDER_MODE THEN
-        IF message.MessageAttributes.ContainsKey("SERVICE_PROVIDER_IDS") THEN
-            serviceProviderIds = message.MessageAttributes["SERVICE_PROVIDER_IDS"].StringValue
-            providerList = PARSE_COMMA_SEPARATED_LIST(serviceProviderIds)
-            
-            FOR EACH providerId IN providerList DO
-                IF NOT VALIDATE_SERVICE_PROVIDER_EXISTS(providerId) THEN
-                    LOG("ERROR", "Invalid service provider in list: " + providerId)
-                    RETURN FALSE, NULL
-                END IF
-            END FOR
-        ELSE
-            LOG("INFO", "No specific service providers specified, running for all")
-            serviceProviderIds = GET_ALL_AUTHORIZED_PROVIDERS()
-        END IF
-    END IF
-    
-    // Step 5: Validate customer-provider association
-    IF NOT VALIDATE_CUSTOMER_PROVIDER_ASSOCIATION(customerId, serviceProviderId) THEN
-        LOG("ERROR", "Customer not associated with service provider")
-        RETURN FALSE, NULL
-    END IF
-    
-    RETURN TRUE, {serviceProviderId, serviceProviderIds}
-END
+Step 1: Primary Provider Resolution
+       Let P₁ = ExtractServiceProvider(M.attributes)
+       If P₁ = ∅ ∧ B ≠ ∅, then P₁ = ServiceProvider(B)
+
+Step 2: Provider Existence Validation  
+       If P₁ = ∅, then Return (False, ∅)
+
+Step 3: Cross-Provider Mode Handling
+       If CrossProviderMode = True, then:
+           Let S = {SERVICE_PROVIDER_IDS ∈ M.attributes}
+           If S ≠ ∅, then:
+               Parse S → Set P = {p₁, p₂, ..., pₙ}
+               For each pᵢ ∈ P: If pᵢ ∉ ValidProviders, then Return (False, ∅)
+           Else P = AllAuthorizedProviders
+
+Step 4: Customer-Provider Association Verification
+       Let Associations = {(c,p) | customer c authorized for provider p}
+       If (C, P₁) ∉ Associations, then Return (False, ∅)
+
+Step 5: Success Case  
+       Return (True, {P₁, P})
 ```
 
 ### Code Locations
