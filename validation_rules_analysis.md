@@ -15,31 +15,35 @@ This document provides a comprehensive analysis of the key validation rules impl
 ### Algorithm
 ```
 ALGORITHM: ValidateCustomerIdentification
-INPUT: M = SQS Message, T = Customer Type
-OUTPUT: (Valid, CustomerData) where Valid ∈ {True, False}
+INPUT: SQS Message, Customer Type
+OUTPUT: Validation Result (Success/Failure), Customer Data
 
-Step 1: Presence Verification
-       Let A = {CustomerId ∈ M.attributes}
-       Let B = {AMOPCustomerId ∈ M.attributes}
-       If A ∪ B = ∅, then Return (False, ∅)
+Step 1: Check for Required Customer Identifiers
+       Examine the incoming message for either CustomerId or AMOPCustomerId attributes
+       If neither identifier is present in the message attributes
+       Then log exception "No Customer Id provided" and return failure
 
-Step 2: Rev Customer Validation  
-       If T = Rev, then:
-           If A ≠ ∅, then:
-               Parse CustomerId → GUID format
-               If GUID = Empty ∨ GUID = NULL, then Return (False, ∅)
-           Else Return (False, ∅)
+Step 2: Validate Rev Customer Requirements
+       If the customer type is Rev
+       Then check if CustomerId attribute exists in message
+            If CustomerId exists, parse it as a GUID format
+            If the parsed GUID is empty or null
+            Then log exception "Blank Customer Id provided" and return failure
+            If CustomerId does not exist for Rev customer type
+            Then log exception "Rev customer requires CustomerId" and return failure
 
-Step 3: AMOP Customer Validation
-       If B ≠ ∅, then:
-           Parse AMOPCustomerId → Integer format  
-           If Integer ≤ 0, then Return (False, ∅)
+Step 3: Validate AMOP Customer Identifier
+       If AMOPCustomerId attribute exists in the message
+       Then parse the value as an integer
+       If the parsed integer is less than or equal to zero
+       Then log exception "Invalid AMOP Customer Id" and return failure
 
-Step 4: Type-Specific Requirements
-       If T ≠ Rev ∧ B = ∅, then Throw Exception
-       
-Step 5: Success Case
-       Return (True, {ParsedCustomerId, ParsedAMOPCustomerId})
+Step 4: Ensure Appropriate Customer Type Processing
+       If customer type is not Rev and no AMOP Customer ID was found
+       Then throw an argument exception for missing required AMOP Customer ID
+
+Step 5: Return Successful Validation
+       Return success with the extracted and validated customer identifiers
 ```
 
 ### Code Locations
@@ -66,32 +70,37 @@ Step 5: Success Case
 
 ### Algorithm
 ```
-ALGORITHM: ValidateBillingPeriod  
-INPUT: M = SQS Message
-OUTPUT: (Valid, BillingData) where Valid ∈ {True, False}
+ALGORITHM: ValidateBillingPeriod
+INPUT: SQS Message
+OUTPUT: Validation Result (Success/Failure), Billing Period Data
 
-Step 1: Attribute Set Definition
-       Let P = {BillPeriodId ∈ M.attributes}
-       Let Y = {BillYear ∈ M.attributes}  
-       Let M₀ = {BillMonth ∈ M.attributes}
-       If P ∪ (Y ∩ M₀) = ∅, then Return (False, ∅)
+Step 1: Check for Billing Period Information
+       Examine the message attributes for billing period identifiers
+       Look for either BillPeriodId or both BillYear and BillMonth attributes
+       If none of these required billing period identifiers are found
+       Then log exception "No Billing Period provided" and return failure
 
-Step 2: Period ID Validation
-       If P ≠ ∅, then:
-           Extract BillPeriodId value → String S
-           Parse S → Integer I
-           If Parse(S) fails, then Return (False, ∅)
+Step 2: Validate Billing Period ID Format
+       If BillPeriodId attribute exists in the message
+       Then extract the string value from the attribute
+       Attempt to parse the string value as an integer
+       If the parsing fails or produces an invalid number
+       Then log exception "Invalid Billing Period provided" and return failure
 
-Step 3: Database Existence Verification  
-       Let DB = Database billing period records
-       If ∄ record ∈ DB where record.id = I, then Return (False, ∅)
+Step 3: Verify Billing Period Exists in Database
+       Query the database using the parsed billing period ID
+       Search for a matching billing period record
+       If no billing period record is found in the database
+       Then log error "Billing Period not found in database" and return failure
 
-Step 4: Service Provider Association
-       Let SP = ServiceProvider(I)
-       If SP = ∅, then Return (False, ∅)
+Step 4: Retrieve Associated Service Provider
+       Use the billing period ID to lookup the associated service provider
+       Query the database to find the service provider linked to this billing period
+       If no service provider is found for the billing period
+       Then log error "Service Provider not found for billing period" and return failure
 
-Step 5: Success Case
-       Return (True, {I, BillingPeriod(I), SP})
+Step 5: Return Successful Validation
+       Return success with the validated billing period ID, billing period object, and service provider ID
 ```
 
 ### Code Locations
@@ -120,30 +129,38 @@ Step 5: Success Case
 ### Algorithm
 ```
 ALGORITHM: ValidateIntegrationAuthentication
-INPUT: M = SQS Message, T = Customer Type  
-OUTPUT: (Valid, AuthID) where Valid ∈ {True, False}, AuthID ∈ ℕ ∪ {∅}
+INPUT: SQS Message, Customer Type
+OUTPUT: Validation Result (Success/Failure), Authentication ID
 
-Step 1: Type-Based Requirement Check
-       If T ≠ Rev, then Return (True, ∅)
+Step 1: Determine Authentication Requirements
+       Check if the customer type is Rev
+       If customer type is not Rev (AMOP customers)
+       Then integration authentication is not required, return success with null authentication ID
 
-Step 2: Authentication Attribute Verification
-       Let A = {IntegrationAuthenticationId ∈ M.attributes}
-       If A = ∅, then Return (False, ∅)
+Step 2: Verify Authentication Attribute Presence
+       For Rev customers, check if IntegrationAuthenticationId attribute exists in message
+       If the IntegrationAuthenticationId attribute is missing
+       Then log exception "Integration Authentication Id required for Rev customers" and return failure
 
-Step 3: Format Validation  
-       Extract IntegrationAuthenticationId value → String S
-       Parse S → Integer I
-       If Parse(S) fails, then Return (False, ∅)
+Step 3: Validate Authentication ID Format
+       Extract the IntegrationAuthenticationId value as a string from the message attributes
+       Attempt to parse the string value as an integer
+       If the parsing fails or produces an invalid format
+       Then log exception "Invalid Integration Authentication Id format" and return failure
 
-Step 4: Value Range Validation
-       If I ≤ 0, then Return (False, ∅)
+Step 4: Validate Authentication ID Value Range
+       Check if the parsed authentication ID is a positive number
+       If the authentication ID is less than or equal to zero
+       Then log exception "Authentication Id must be positive" and return failure
 
-Step 5: System Existence Verification
-       Let AuthSystem = Set of valid authentication records
-       If I ∉ AuthSystem, then Return (False, ∅)
+Step 5: Verify Authentication Credentials in System
+       Query the authentication system to verify the credentials exist
+       Check if the authentication ID corresponds to valid credentials in the system
+       If the authentication credentials are not found in the system
+       Then log exception "Integration Authentication credentials not found" and return failure
 
-Step 6: Success Case
-       Return (True, I)
+Step 6: Return Successful Validation
+       Return success with the validated authentication ID for further processing
 ```
 
 ### Code Locations
@@ -171,30 +188,35 @@ Step 6: Success Case
 ### Algorithm
 ```
 ALGORITHM: ValidateServiceProviderAssociation
-INPUT: M = SQS Message, B = Billing Period ID, C = Customer ID
-OUTPUT: (Valid, ProviderData) where Valid ∈ {True, False}
+INPUT: SQS Message, Billing Period ID, Customer ID
+OUTPUT: Validation Result (Success/Failure), Service Provider Data
 
-Step 1: Primary Provider Resolution
-       Let P₁ = ExtractServiceProvider(M.attributes)
-       If P₁ = ∅ ∧ B ≠ ∅, then P₁ = ServiceProvider(B)
+Step 1: Attempt Primary Service Provider Resolution
+       Try to extract the service provider ID directly from the message attributes
+       If no service provider ID is found in the message and a billing period ID exists
+       Then query the database to derive the service provider from the billing period
 
-Step 2: Provider Existence Validation  
-       If P₁ = ∅, then Return (False, ∅)
+Step 2: Validate Service Provider Existence
+       Check if a valid service provider ID was obtained from either source
+       If no service provider ID could be determined
+       Then log error "No service provider found for optimization" and return failure
 
-Step 3: Cross-Provider Mode Handling
-       If CrossProviderMode = True, then:
-           Let S = {SERVICE_PROVIDER_IDS ∈ M.attributes}
-           If S ≠ ∅, then:
-               Parse S → Set P = {p₁, p₂, ..., pₙ}
-               For each pᵢ ∈ P: If pᵢ ∉ ValidProviders, then Return (False, ∅)
-           Else P = AllAuthorizedProviders
+Step 3: Handle Cross-Provider Optimization Mode
+       If the system is running in cross-provider optimization mode
+       Then check if SERVICE_PROVIDER_IDS attribute exists in the message
+            If the attribute exists, parse the comma-separated list of provider IDs
+            For each provider ID in the list, verify it exists in the system
+            If any provider ID is invalid, log error "Invalid service provider in list" and return failure
+            If no specific providers are specified, use all authorized providers for the customer
 
-Step 4: Customer-Provider Association Verification
-       Let Associations = {(c,p) | customer c authorized for provider p}
-       If (C, P₁) ∉ Associations, then Return (False, ∅)
+Step 4: Verify Customer-Provider Association
+       Check the authorization system for customer-provider relationships
+       Verify that the customer is authorized to use the specified service provider
+       If the customer is not associated with the service provider
+       Then log error "Customer not associated with service provider" and return failure
 
-Step 5: Success Case  
-       Return (True, {P₁, P})
+Step 5: Return Successful Validation
+       Return success with the validated primary service provider ID and any additional provider list
 ```
 
 ### Code Locations
