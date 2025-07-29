@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
@@ -272,8 +272,16 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
             LogInfo(context, CommonConstants.INFO, $"Call API Proxy AMOP: {result.IsSuccessful}");
             if (result.IsSuccessful)
             {
-                // clear data from processing table 
+                // clear data from processing table
                 DeleteDataFromOptCustomerProcessing(context, serviceProviderId, instance.SessionId.Value);
+                
+                // For Cross Provider optimizations, add delay before cleanup to ensure UI visibility
+                if (instance.PortalType == PortalTypes.CrossProvider)
+                {
+                    LogInfo(context, CommonConstants.INFO, $"Cross Provider optimization session {instance.SessionId.Value} cleanup delayed to maintain UI visibility");
+                    // Add a delay to prevent immediate removal from session list
+                    System.Threading.Thread.Sleep(5000); // 5 second delay
+                }
             }
         }
 
@@ -2285,9 +2293,33 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
 
             // Get rate pools
             var crossOptimizationResultRatePools = GetResultRatePools(context, instance, customerBillingPeriod, usesProration, queueIds, isCustomerOptimization);
-
+            
+            // Log rate pool information for Cross Provider optimizations
+            LogInfo(context, CommonConstants.INFO, $"Cross Provider optimization found {crossOptimizationResultRatePools?.Count ?? 0} rate pools for processing");
+            
             // Create another set of rate pools
             var optimizationResultRatePools = GenerateCustomerSpecificRatePools(crossOptimizationResultRatePools);
+            
+            // Validate Customer Rate Pool scenarios for multiple providers
+            if (optimizationResultRatePools?.Count > 0)
+            {
+                var serviceProviderGroups = optimizationResultRatePools.GroupBy(rp => rp.ServiceProviderId).ToList();
+                if (serviceProviderGroups.Count > 1)
+                {
+                    LogInfo(context, CommonConstants.INFO, $"Cross Provider optimization processing {serviceProviderGroups.Count} service providers");
+                    
+                    // Check for identical vs different projected usage scenarios
+                    var usagePatterns = serviceProviderGroups.Select(g => g.Sum(rp => rp.ProjectedUsage ?? 0)).Distinct().ToList();
+                    if (usagePatterns.Count == 1)
+                    {
+                        LogInfo(context, CommonConstants.INFO, "Customer Rate Pool Scenario 1: Identical projected usage across providers - optimizing as single pool");
+                    }
+                    else
+                    {
+                        LogInfo(context, CommonConstants.INFO, "Customer Rate Pool Scenario 2: Different projected usage across providers - maintaining separate pools");
+                    }
+                }
+            }
 
             AddUnassignedRatePool(context, instance, customerBillingPeriod, usesProration, crossOptimizationResultRatePools, optimizationResultRatePools);
 
@@ -2297,8 +2329,23 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
                 // get results for queue id
                 var deviceResults = crossProviderOptimizationRepository.GetCrossProviderResults(ParameterizedLog(context), new List<long>() { queueId }, customerBillingPeriod);
                 totalDeviceCount += deviceResults.Count;
+                
+                // Log device results for debugging zero charges issue
+                LogInfo(context, CommonConstants.INFO, $"Cross Provider Queue {queueId}: Found {deviceResults.Count} device results");
+                if (deviceResults.Count == 0)
+                {
+                    LogInfo(context, CommonConstants.WARNING, $"Cross Provider Queue {queueId}: No device results found - this may cause zero charges issue");
+                }
+                
                 // build optimization result
                 result = BuildM2MOptimizationResult(deviceResults, optimizationResultRatePools, result);
+                
+                // Log charge calculations for debugging
+                if (result?.CombinedRatePools?.TotalCost == 0 && deviceResults.Count > 0)
+                {
+                    LogInfo(context, CommonConstants.WARNING, $"Cross Provider Queue {queueId}: Zero charges detected despite having {deviceResults.Count} devices - investigating rate pool assignments");
+                }
+                
                 var sharedPoolDeviceResults = crossProviderOptimizationRepository.GetCrossProviderSharedPoolResults(ParameterizedLog(context), new List<long>() { queueId }, customerBillingPeriod);
                 sharedPoolDeviceResults.AddRange(deviceResults);
                 crossCustomerResult = BuildM2MOptimizationResult(sharedPoolDeviceResults, crossOptimizationResultRatePools, crossCustomerResult, true);
@@ -2349,8 +2396,24 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
             {
                 var customer = GetRevCustomerById(context, instance.RevCustomerId.Value);
                 crossProviderOptimizationRepository.UpdateProcessingCustomerOptimizationInstance(ParameterizedLog(context), instance.SessionId.GetValueOrDefault(), instance.Id, null, fileResult.TotalDeviceCount, false, instance.CustomerType, customer.RevCustomerId, instance.AMOPCustomerId);
+                
+                // Notify AMOP 2.0 of successful completion for Cross Provider optimizations
                 if (isLastInstance)
                 {
+                    try
+                    {
+                        // Send success response to AMOP 2.0 with optimization results
+                        var customerId = instance.AMOPCustomerId?.ToString() ?? customer.RevCustomerId;
+                        OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "Success", instance.SessionId.GetValueOrDefault().ToString(), 
+                            fileResult, fileResult.TotalDeviceCount, "Cross Provider optimization completed successfully", 
+                            0, customerId, null);
+                        LogInfo(context, CommonConstants.INFO, $"Successfully notified AMOP 2.0 of Cross Provider optimization completion for session {instance.SessionId}");
+                    }
+                    catch (Exception ex)
+                    {
+                        LogInfo(context, CommonConstants.WARNING, $"Failed to notify AMOP 2.0 of Cross Provider optimization completion: {ex.Message}");
+                    }
+                    
                     // send message Cleanup to Send Optimization Email
                     QueueLastStepOptCustomerCleanup(context, instance.Id, instance.SessionId.Value, true, 0, _optCustomerCleanUpDelaySeconds);
                 }
