@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using Microsoft.Data.SqlClient;
@@ -257,10 +257,10 @@ namespace Altaworx.SimCard.Cost.MobilityCustomerOptimization
                     else
                     {
                         var errorMessage = "There is an error in Processing Customer Rate Plans";
-                        UpdateCustomerOptimization(context, optimizationSessionId, errorMessage, serviceProviderId, revAccountNumber);
+                        UpdateCustomerOptimization(context, optimizationSessionId, errorMessage, serviceProviderId, customerId.ToString());
                         StopOptimizationInstance(context, instanceId, OptimizationStatus.CompleteWithErrors);
                         //triggger AMOP2.0 to send error message
-                        OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, revAccountNumber, additionalData);
+                        OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, customerId.ToString(), additionalData);
                     }
                 }
                 else

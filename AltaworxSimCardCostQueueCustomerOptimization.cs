@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using Microsoft.Data.SqlClient;
 using System.Linq;
@@ -345,10 +345,10 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
                     else
                     {
                         var errorMessage = "There is an error in Processing Customer Rate Plans";
-                        UpdateCustomerOptimization(context, optimizationSessionId, errorMessage, serviceProviderId.Value, revAccountNumber);
+                        UpdateCustomerOptimization(context, optimizationSessionId, errorMessage, serviceProviderId.Value, customerId.ToString());
                         StopOptimizationInstance(context, instanceId, OptimizationStatus.CompleteWithErrors);
                         //triggger AMOP2.0 to send error message
-                        OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, revAccountNumber, additionalData);
+                        OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, customerId.ToString(), additionalData);
                     }
 
                     // (Optional) Calculate Bill in Advance Charges
@@ -381,10 +381,10 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
 
                     var errorMessage = "No Comm Groups and/or Rate Plans for this Instance";
                     LogInfo(context, "ERROR", errorMessage);
-                    UpdateCustomerOptimization(context, optimizationSessionId, errorMessage, serviceProviderId.Value, revAccountNumber);
+                    UpdateCustomerOptimization(context, optimizationSessionId, errorMessage, serviceProviderId.Value, customerId.ToString());
                     StopOptimizationInstance(context, instanceId, OptimizationStatus.CompleteWithErrors);
                     //triggger AMOP2.0 to send error message
-                    OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, revAccountNumber, additionalData);
+                    OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, customerId.ToString(), additionalData);
                 }
             }
             else
@@ -747,7 +747,7 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
                         crossProviderOptimizationRepository.UpdateProcessingCustomerOptimizationInstance(ParameterizedLog(context), optimizationSessionId, instanceId, errorMessage, 0, false, customer.CustomerType, customer.RevAccountNumber, customer.CustomerId);
                         StopOptimizationInstance(context, instanceId, OptimizationStatus.CompleteWithErrors);
                         //triggger AMOP2.0 to send error message
-                        OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, customerId.ToString(), additionalData);
+                        OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, customer.CustomerId.ToString(), additionalData);
                     }
 
                     // Record charges for devices with no rate plans
@@ -764,7 +764,7 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
                     crossProviderOptimizationRepository.UpdateProcessingCustomerOptimizationInstance(ParameterizedLog(context), optimizationSessionId, instanceId, errorMessage, 0, false, customer.CustomerType, customer.RevAccountNumber, customer.CustomerId);
                     StopOptimizationInstance(context, instanceId, OptimizationStatus.CompleteWithErrors);
                     //triggger AMOP2.0 to send error message
-                    OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, customerId.ToString(), additionalData);
+                    OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, customer.CustomerId.ToString(), additionalData);
                 }
             }
             else
