@@ -1,0 +1,53 @@
+digraph CrossProviderOptimization {
+    rankdir=TB;
+    node [shape=box, style=filled, fontname="Helvetica", fontsize=12];
+    edge [fontname="Helvetica", fontsize=10];
+
+    // Define nodes with colors matching the original design
+    A [label="🚀 AMOP 2.0 Trigger\nCross-Provider Customer Request", 
+       fillcolor="#ff6b6b", color="#d63031", fontcolor="#ffffff", penwidth=3];
+    
+    B [label="🔐 Cross-Provider Session Management\nMulti-Provider Customer Validation", 
+       fillcolor="#4ecdc4", color="#00b894", fontcolor="#ffffff", penwidth=2];
+    
+    C [label="🔍 Cross-Provider Rate Plan Discovery\nMulti-Provider Auto Change Detection", 
+       fillcolor="#a8e6cf", color="#00b894", fontcolor="#000000", penwidth=2];
+    
+    D [label="✅ Cross-Provider Customer Validation\nMulti-Provider Eligibility Check", 
+       fillcolor="#ffd93d", color="#fdcb6e", fontcolor="#000000", penwidth=2];
+    
+    E [label="🏊 Cross-Provider Rate Pool Generation\nMulti-Provider Customer Pool Calculation", 
+       fillcolor="#d1a3ff", color="#a29bfe", fontcolor="#000000", penwidth=2];
+    
+    F [label="📋 Multi-Provider Queue Creation\nCross-Provider Customer Job Queuing", 
+       fillcolor="#74b9ff", color="#0984e3", fontcolor="#ffffff", penwidth=2];
+    
+    G [label="⚡ Multi-Provider Optimization Execution\nCross-Provider Customer Algorithm Processing", 
+       fillcolor="#fd79a8", color="#e84393", fontcolor="#ffffff", penwidth=2];
+    
+    H [label="📊 Cross-Provider Result Compilation\nMulti-Provider Customer Data Aggregation", 
+       fillcolor="#74b9ff", color="#0984e3", fontcolor="#ffffff", penwidth=2];
+    
+    I [label="📧 Cross-Provider Customer Email & Reporting\nMulti-Provider Customer Finalization", 
+       fillcolor="#d1a3ff", color="#a29bfe", fontcolor="#000000", penwidth=2];
+    
+    J [label="🧹 Cross-Provider Processing Cleanup\nMulti-Provider Session Finalization", 
+       fillcolor="#81ecec", color="#00cec9", fontcolor="#000000", penwidth=2];
+
+    // Define edges with data flow labels
+    A -> B [label="Customer Parameters\nMulti-Provider Settings", fontsize=9];
+    B -> C [label="Validated Customer Data\nProvider Associations", fontsize=9];
+    C -> D [label="Cross-Provider Rate Plan Status\nProvider-Specific Capabilities", fontsize=9];
+    D -> E [label="Validated Multi-Provider Customer Data\nCross-Provider Eligibility Status", fontsize=9];
+    E -> F [label="Cross-Provider Rate Pool Data\nProvider-Specific Pool Configurations", fontsize=9];
+    F -> G [label="Cross-Provider Queue Items\nProvider-Specific Job Assignments", fontsize=9];
+    G -> H [label="Cross-Provider Optimization Results\nMulti-Provider Cost Analysis", fontsize=9];
+    H -> I [label="Compiled Cross-Provider Results\nConsolidated Multi-Provider Statistics", fontsize=9];
+    I -> J [label="Cross-Provider Reports\nMulti-Provider Optimization Summary", fontsize=9];
+
+    // Add legend/title
+    labelloc="t";
+    label="Cross-Provider Customer Optimization System\nData Flow Diagram";
+    fontsize=16;
+    fontname="Helvetica";
+}
