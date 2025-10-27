@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
@@ -369,41 +369,67 @@ namespace Altaworx.SimCard.Cost.Optimizer
             // else record to cache & send sqs message
             if (!assigner.IsCompleted && context.IsRedisConnectionStringValid && IsUsingRedisCache)
             {
-                //save to cache the assigner
-                var remainingQueueIds = RedisCacheHelper.RecordPartialAssignerToCache(context, assigner);
-                if (remainingQueueIds != null && remainingQueueIds.Count > 0)
+                try
                 {
-                    //requeue to continue
-                    await EnqueueOptimizationContinueProcessAsync(context, remainingQueueIds, chargeType, skipLowerCostCheck);
+                    //save to cache the assigner
+                    var remainingQueueIds = RedisCacheHelper.RecordPartialAssignerToCache(context, assigner);
+                    if (remainingQueueIds != null && remainingQueueIds.Count > 0)
+                    {
+                        //requeue to continue
+                        await EnqueueOptimizationContinueProcessAsync(context, remainingQueueIds, chargeType, skipLowerCostCheck);
+                    }
+                    else
+                    {
+                        // No remaining queues, consider optimization complete
+                        LogInfo(context, "INFO", "No remaining queues after cache recording, completing optimization");
+                        await CompleteOptimization(context, queueIds, amopCustomerId, accountNumber, commPlanGroupId, assigner);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogInfo(context, "ERROR", $"Redis cache operation failed: {ex.Message}. Completing optimization without cache.");
+                    await CompleteOptimization(context, queueIds, amopCustomerId, accountNumber, commPlanGroupId, assigner);
                 }
             }
             else
             {
-                if (context.IsRedisConnectionStringValid && IsUsingRedisCache)
+                await CompleteOptimization(context, queueIds, amopCustomerId, accountNumber, commPlanGroupId, assigner);
+            }
+        }
+        
+        private async Task CompleteOptimization(KeySysLambdaContext context, List<long> queueIds, int? amopCustomerId, string accountNumber, long commPlanGroupId, RatePoolAssigner assigner)
+        {
+            if (context.IsRedisConnectionStringValid && IsUsingRedisCache)
+            {
+                try
                 {
                     RedisCacheHelper.ClearPartialAssignerFromCache(context, queueIds);
                 }
-
-                var isSuccess = assigner.Best_Result != null;
-                if (isSuccess)
+                catch (Exception ex)
                 {
-                    // record results
-                    var result = assigner.Best_Result;
-                    if (amopCustomerId.HasValue)
-                    {
-                        RecordResults(context, result.QueueId, amopCustomerId.Value, commPlanGroupId, result, skipLowerCostCheck);
-                    }
-                    else
-                    {
-                        RecordResults(context, result.QueueId, accountNumber, commPlanGroupId, result, skipLowerCostCheck);
-                    }
+                    LogInfo(context, "WARNING", $"Failed to clear cache: {ex.Message}");
                 }
+            }
 
-                foreach (long queueId in queueIds)
+            var isSuccess = assigner.Best_Result != null;
+            if (isSuccess)
+            {
+                // record results
+                var result = assigner.Best_Result;
+                if (amopCustomerId.HasValue)
                 {
-                    // stop queue
-                    StopQueue(context, queueId, isSuccess);
+                    RecordResults(context, result.QueueId, amopCustomerId.Value, commPlanGroupId, result, false);
                 }
+                else
+                {
+                    RecordResults(context, result.QueueId, accountNumber, commPlanGroupId, result, false);
+                }
+            }
+
+            foreach (long queueId in queueIds)
+            {
+                // stop queue
+                StopQueue(context, queueId, isSuccess);
             }
         }
 

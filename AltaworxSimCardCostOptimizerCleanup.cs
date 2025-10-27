@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Globalization;
@@ -1833,11 +1833,28 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
             string query;
             if (serviceProviderId > 0)
             {
+                // For cross-provider optimizations (serviceProviderId = 0), ensure all providers are complete
+                // before deleting session data to prevent premature disappearance from session list
+                var isAllProvidersComplete = CheckAllProvidersCompleteForSession(context, sessionId);
+                if (!isAllProvidersComplete)
+                {
+                    LogInfo(context, "INFO", $"Not deleting session data for SessionId {sessionId} as other providers are still processing");
+                    return;
+                }
+                
                 query = @"DELETE FROM [OptimizationCustomerProcessing]
                             WHERE [ServiceProviderId] = @serviceProviderId AND [SessionId] = @sessionId";
             }
             else
             {
+                // For cross-provider (serviceProviderId = 0), check if all providers in the session are complete
+                var isAllProvidersComplete = CheckAllProvidersCompleteForSession(context, sessionId);
+                if (!isAllProvidersComplete)
+                {
+                    LogInfo(context, "INFO", $"Not deleting session data for cross-provider SessionId {sessionId} as not all providers are complete");
+                    return;
+                }
+                
                 query = @"DELETE FROM [OptimizationCustomerProcessing]
                             WHERE [SessionId] = @sessionId";
             }
@@ -1855,6 +1872,27 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
 
                     var rdr = cmd.ExecuteNonQuery();
                     conn.Close();
+                }
+            }
+        }
+        
+        private bool CheckAllProvidersCompleteForSession(KeySysLambdaContext context, long sessionId)
+        {
+            LogInfo(context, "SUB", $"CheckAllProvidersCompleteForSession({sessionId})");
+            
+            using (var conn = new SqlConnection(context.ConnectionString))
+            {
+                using (var cmd = new SqlCommand(@"SELECT COUNT(*) FROM [OptimizationCustomerProcessing] 
+                                                WHERE [SessionId] = @sessionId AND [IsProcessed] = 0", conn))
+                {
+                    cmd.CommandType = CommandType.Text;
+                    cmd.Parameters.AddWithValue("@sessionId", sessionId);
+                    conn.Open();
+
+                    var incompleteCount = (int)cmd.ExecuteScalar();
+                    conn.Close();
+                    
+                    return incompleteCount == 0;
                 }
             }
         }
@@ -2291,6 +2329,9 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
 
             AddUnassignedRatePool(context, instance, customerBillingPeriod, usesProration, crossOptimizationResultRatePools, optimizationResultRatePools);
 
+            // Get all comm group IDs to find and record the best (lowest cost) results
+            var commGroupIds = new List<long>();
+            
             foreach (var queueId in queueIds)
             {
                 LogInfo(context, CommonConstants.INFO, $"Building results for Optimization Queue with Id: {queueId}.");
@@ -2302,6 +2343,25 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
                 var sharedPoolDeviceResults = crossProviderOptimizationRepository.GetCrossProviderSharedPoolResults(ParameterizedLog(context), new List<long>() { queueId }, customerBillingPeriod);
                 sharedPoolDeviceResults.AddRange(deviceResults);
                 crossCustomerResult = BuildM2MOptimizationResult(sharedPoolDeviceResults, crossOptimizationResultRatePools, crossCustomerResult, true);
+                
+                // Get the comm group ID for this queue to record best results
+                var queue = GetQueue(context, queueId);
+                if (queue.Id > 0 && !commGroupIds.Contains(queue.CommPlanGroupId))
+                {
+                    commGroupIds.Add(queue.CommPlanGroupId);
+                }
+            }
+
+            // Record the best (lowest cost) queue for each comm group to ensure proper charge display
+            foreach (var commGroupId in commGroupIds)
+            {
+                var winningQueueId = GetWinningQueueId(context, commGroupId);
+                if (winningQueueId > 0)
+                {
+                    LogInfo(context, CommonConstants.INFO, $"Recording winning queue {winningQueueId} for comm group {commGroupId}");
+                }
+                // End all other queues in this comm group to prevent duplicates
+                EndQueuesForCommGroup(context, commGroupId);
             }
 
             // write result to stat file
@@ -2347,8 +2407,25 @@ namespace Altaworx.SimCard.Cost.Optimizer.Cleanup
         {
             if (isCustomerOptimization)
             {
-                var customer = GetRevCustomerById(context, instance.RevCustomerId.Value);
-                crossProviderOptimizationRepository.UpdateProcessingCustomerOptimizationInstance(ParameterizedLog(context), instance.SessionId.GetValueOrDefault(), instance.Id, null, fileResult.TotalDeviceCount, false, instance.CustomerType, customer.RevCustomerId, instance.AMOPCustomerId);
+                // Handle both Rev and AMOP customers for cross-provider optimizations
+                Guid? revCustomerId = null;
+                if (instance.RevCustomerId.HasValue)
+                {
+                    var customer = GetRevCustomerById(context, instance.RevCustomerId.Value);
+                    revCustomerId = customer.RevCustomerId;
+                }
+                
+                crossProviderOptimizationRepository.UpdateProcessingCustomerOptimizationInstance(
+                    ParameterizedLog(context), 
+                    instance.SessionId.GetValueOrDefault(), 
+                    instance.Id, 
+                    null, 
+                    fileResult.TotalDeviceCount, 
+                    false, 
+                    instance.CustomerType, 
+                    revCustomerId, 
+                    instance.AMOPCustomerId);
+                    
                 if (isLastInstance)
                 {
                     // send message Cleanup to Send Optimization Email

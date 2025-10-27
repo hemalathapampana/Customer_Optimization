@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using Microsoft.Data.SqlClient;
 using System.Linq;
@@ -530,12 +530,24 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
                 }
             }
 
-            var simCardsByRatePoolIds = optimizationSimCards.GroupBy(x => x.CustomerRatePoolId).Distinct();
+            var simCardsByRatePoolIds = optimizationSimCards.GroupBy(x => x.CustomerRatePoolId).ToList();
 
+            // Process each unique rate pool ID to avoid duplicates with identical projected usage
+            var processedRatePoolIds = new HashSet<int?>();
+            
             foreach (var simCardsByRatePoolId in simCardsByRatePoolIds)
             {
-                LogInfo(context, CommonConstants.INFO, $"RatePoolId: {simCardsByRatePoolId}");
-                // Get all rate plan codes from the devices
+                // Skip if we've already processed this rate pool ID to prevent duplicates
+                if (processedRatePoolIds.Contains(simCardsByRatePoolId.Key))
+                {
+                    LogInfo(context, CommonConstants.INFO, $"Skipping duplicate processing for RatePoolId: {simCardsByRatePoolId.Key}");
+                    continue;
+                }
+                
+                processedRatePoolIds.Add(simCardsByRatePoolId.Key);
+                LogInfo(context, CommonConstants.INFO, $"Processing RatePoolId: {simCardsByRatePoolId.Key}");
+                
+                // Get all rate plan codes from the devices in this rate pool
                 var ratePlanCodes = simCardsByRatePoolId.Select(x => x.CustomerRatePlanCode).Distinct();
                 var isError = false;
                 if (simCardsByRatePoolId.Key != null)
@@ -816,12 +828,24 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
                 }
             }
 
-            var simCardsByRatePoolIds = optimizationSimCards.GroupBy(x => x.CustomerRatePoolId).Distinct();
+            var simCardsByRatePoolIds = optimizationSimCards.GroupBy(x => x.CustomerRatePoolId).ToList();
 
+            // Process each unique rate pool ID to avoid duplicates with identical projected usage
+            var processedRatePoolIds = new HashSet<int?>();
+            
             foreach (var simCardsByRatePoolId in simCardsByRatePoolIds)
             {
-                LogInfo(context, CommonConstants.INFO, $"RatePoolId: {simCardsByRatePoolId.Key}");
-                // Get all rate plan codes from the devices
+                // Skip if we've already processed this rate pool ID to prevent duplicates
+                if (processedRatePoolIds.Contains(simCardsByRatePoolId.Key))
+                {
+                    LogInfo(context, CommonConstants.INFO, $"Skipping duplicate processing for RatePoolId: {simCardsByRatePoolId.Key}");
+                    continue;
+                }
+                
+                processedRatePoolIds.Add(simCardsByRatePoolId.Key);
+                LogInfo(context, CommonConstants.INFO, $"Processing RatePoolId: {simCardsByRatePoolId.Key}");
+                
+                // Get all rate plan codes from the devices in this rate pool
                 var ratePlanCodes = simCardsByRatePoolId.Select(x => x.CustomerRatePlanCode).Distinct();
                 var isError = false;
                 if (simCardsByRatePoolId.Key != null)
