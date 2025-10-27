@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
@@ -160,6 +160,12 @@ namespace Altaworx.SimCard.Cost.Optimizer
                 if (QUEUE_FINISHED_STATUSES.Contains(queue.RunStatusId))
                 {
                     LogInfo(context, "WARNING", $"Duplicated queue processing request for queue with id {queueId}. Continue to process next queue.");
+                    
+                    // For Cross Provider optimizations, also check session-level duplication
+                    if (instance?.PortalType == PortalTypes.CrossProvider && instance.SessionId.HasValue)
+                    {
+                        LogInfo(context, "WARNING", $"Cross Provider optimization session {instance.SessionId.Value} already completed for queue {queueId}. Skipping to prevent duplication.");
+                    }
                     continue;
                 }
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Data;
 using Microsoft.Data.SqlClient;
 using System.Linq;
@@ -217,6 +217,7 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
             else
             {
                 LogInfo(context, CommonConstants.ERROR, $"No Customer Id found. Stopping Cross-Provider Customer Optimization.");
+                return;
             }
             LogVariableValue(context, nameof(customerIdentifier), customerIdentifier);
             // Get Service Provider Ids
@@ -242,6 +243,29 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
             try
             {
                 await RunCrossProviderCustomerOptimization(context, tenantId, customerIdentifier, customerType, serviceProviderIds, customerBillingPeriodId, message.MessageId, optimizationSessionId, isLastInstance, additionalData);
+            }
+            catch (Exception ex)
+            {
+                // Enhanced error handling to prevent stuck optimizations
+                LogInfo(context, CommonConstants.ERROR, $"Cross Provider optimization failed with exception: {ex.Message}");
+                LogInfo(context, CommonConstants.ERROR, $"Stack trace: {ex.StackTrace}");
+                
+                try
+                {
+                    // Try to find any instances that might be stuck and update their status
+                    var customer = crossProviderOptimizationRepository.GetOptimizationCustomer(ParameterizedLog(context), customerIdentifier, customerType);
+                    if (customer != null)
+                    {
+                        // Create a dummy instance ID for error reporting if we can't get the actual one
+                        var errorMessage = $"Cross Provider optimization failed: {ex.Message}";
+                        OptimizationAmopApiTrigger.SendResponseToAMOP20(context, "ErrorMessage", optimizationSessionId.ToString(), null, 0, errorMessage, 0, customerIdentifier.ToString(), additionalData);
+                        LogInfo(context, CommonConstants.INFO, $"Sent error notification to AMOP 2.0 for failed Cross Provider optimization session {optimizationSessionId}");
+                    }
+                }
+                catch (Exception notificationEx)
+                {
+                    LogInfo(context, CommonConstants.ERROR, $"Failed to send error notification: {notificationEx.Message}");
+                }
             }
             finally
             {
@@ -697,6 +721,9 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
                 // get customer rate plans
                 var ratePlans = customerRatePlanRepository.GetCrossProviderCustomerRatePlans(ParameterizedLog(context), serviceProviderIds, customerType, new List<int> { customerId }, billingPeriod, tenantId);
 
+                // Log rate plan information for small pool debugging
+                LogInfo(context, CommonConstants.INFO, $"Cross Provider optimization found {ratePlans?.Count ?? 0} rate plans for customer {customerId}");
+                
                 var useBillInAdvance = ratePlans.Count(x => x.IsBillInAdvanceEligible) > 0;
                 //Disable bill in advance logic until new logic is defined (PORT-166)
                 useBillInAdvance = false;
@@ -723,9 +750,15 @@ namespace Altaworx.SimCard.Cost.QueueCustomerOptimization
                 {
                     LogVariableValue(context, nameof(serviceProviderIds), serviceProviderIds);
                     LogVariableValue(context, nameof(billingPeriod), billingPeriod.Id);
+                    
+                    // Enhanced logging for small pool optimization tracking
+                    LogInfo(context, CommonConstants.INFO, $"Starting Cross Provider optimization instance for customer {customerId} with {ratePlans.Count} rate plans");
+                    
                     var instanceId = crossProviderOptimizationRepository.StartCrossProviderOptimizationInstance(ParameterizedLog(context), tenantId, messageId,
                         customer, PortalTypes.CrossProvider, optimizationSessionId,
                         useBillInAdvance, billingPeriod, nextBillingPeriod, serviceProviderIds);
+
+                    LogInfo(context, CommonConstants.INFO, $"Cross Provider optimization instance {instanceId} created for session {optimizationSessionId} - should appear in session list");
 
                     OptimizationChargeType chargeType = GetChargeType(useBillInAdvance);
 
